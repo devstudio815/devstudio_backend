@@ -1,4 +1,3 @@
-// src/config/database/database.service.ts
 import { Injectable, Inject } from '@nestjs/common';
 import { Pool, QueryResult } from 'pg';
 import { DATABASE_POOL } from './database.config';
