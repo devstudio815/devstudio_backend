@@ -1,3 +1,4 @@
+import { PaginationDto } from '../dto/pagination.dto';
 import { ResponseDto } from '../dto/response.dto';
 
 export class TransformInterceptor<T> {
@@ -11,5 +12,9 @@ export class TransformInterceptor<T> {
   }
   interceptError(message = 'Internal Server Error', statusCode = 500) {
     return new ResponseDto<null>(null, false, statusCode, message);
+  }
+
+  interceptPagination(page: number, limit: number, totalItems: number){
+    return new PaginationDto(page,limit,totalItems)
   }
 }

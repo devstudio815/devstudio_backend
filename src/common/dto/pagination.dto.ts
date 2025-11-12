@@ -10,3 +10,13 @@ export class  PaginationDto {
         this.totalPages = Math.ceil(totalItems / limit);
     }
 }
+
+export class PaginatedResponseDto<T> {
+  data: T[];
+  pagination: PaginationDto;
+
+  constructor(data: T[], pagination: PaginationDto) {
+    this.data = data;
+    this.pagination = pagination;
+  }
+}

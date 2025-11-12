@@ -9,6 +9,7 @@ import {
   UpdateMataPelajaranDto,
   MataPelajaranDto,
 } from './mata-pelajaran.dto';
+import { PaginatedResponseDto, PaginationDto } from 'src/common/dto/pagination.dto';
 
 @Injectable()
 export class MataPelajaranService {
@@ -19,13 +20,14 @@ export class MataPelajaranService {
     try {
       const query = `
         INSERT INTO mata_pelajaran
-        (kode_mapel, nama_mapel, deskripsi, created_at, updated_at)
-        VALUES ($1, $2, $3, NOW(), NOW())
+        (kode_mapel, nama_mapel,kode_kelas, deskripsi, created_at, updated_at)
+        VALUES ($1, $2, $3,$4, NOW(), NOW())
         RETURNING *
       `;
       const result = await this.db.executeQuery(query, [
         req.kode,
         req.nama,
+        req.kode_kelas,
         req.deskripsi,
       ]);
 
@@ -42,26 +44,69 @@ export class MataPelajaranService {
   }
 
   // READ ALL
-  async findAll(): Promise<MataPelajaranDto[]> {
-    const query = `
-      SELECT * FROM mata_pelajaran
-      ORDER BY nama_mapel ASC
-    `;
-    const result = await this.db.findMany(query);
-    return result.map((row) => this.mapToDto(row));
+async findAll(
+  limit: number,
+  page: number,
+  search?: string
+): Promise<PaginatedResponseDto<MataPelajaranDto>> {
+  const offset = (page - 1) * limit;
+
+  // Build query with search
+  let query = `
+    SELECT 
+      id,
+      kode_mapel,
+      nama_mapel,
+      kode_kelas,
+      deskripsi,
+      created_at,
+      updated_at 
+    FROM mata_pelajaran
+  `;
+
+  let countQuery = 'SELECT COUNT(*) as total FROM mata_pelajaran';
+  const queryParams:  any[] = [];
+  const countParams: string[] = [];
+
+  // Add search filter
+  if (search && search.trim() !== '') {
+    const searchCondition = ` WHERE nama_mapel ILIKE $1 OR kode_mapel ILIKE $1`;
+    query += searchCondition;
+    countQuery += searchCondition;
+    
+    queryParams.push(`%${search}%`);
+    countParams.push(`%${search}%`);
   }
 
+
+  const limitParam = queryParams.length + 1;
+  const offsetParam = queryParams.length + 2;
+  
+  query += ` ORDER BY kode_mapel ASC LIMIT $${limitParam} OFFSET $${offsetParam}`;
+  queryParams.push(limit, offset);
+
+  const [dataResult, countResult] = await Promise.all([
+    this.db.findMany(query, ...queryParams),
+    this.db.findOne(countQuery, ...countParams),
+  ]);
+
+  const totalItems = parseInt(countResult.total);
+  const data = dataResult.map((row) => this.mapToDto(row));
+  const pagination = new PaginationDto(page, limit, totalItems);
+
+  return new PaginatedResponseDto(data, pagination);
+}
   // READ ONE
-  async findOne(kode: string): Promise<MataPelajaranDto> {
+  async findOne(id: number): Promise<MataPelajaranDto> {
     const query = `
       SELECT * FROM mata_pelajaran
-      WHERE kode_mapel = $1
+      WHERE id = $1
     `;
-    const result = await this.db.executeQuery(query, [kode]);
+    const result = await this.db.executeQuery(query, [id]);
 
     if (result.rows.length === 0) {
       throw new NotFoundException(
-        `Mata pelajaran dengan kode ${kode} tidak ditemukan`,
+        `Mata pelajaran dengan id ${id} tidak ditemukan`,
       );
     }
 
@@ -70,27 +115,31 @@ export class MataPelajaranService {
 
   // UPDATE
   async update(
-    kode: string,
+    id: number,
     req: UpdateMataPelajaranDto,
   ): Promise<MataPelajaranDto> {
-    // Cek dulu apakah mata pelajaran ada
-    await this.findOne(kode);
+    await this.findOne(id);
 
     const fields: string[] = [];
     const values: any[] = [];
     let paramIndex = 1;
 
-    if (req.kode !== undefined) {
-      fields.push(`kode_mapel = $${paramIndex++}`);
-      values.push(req.kode);
-    }
+
     if (req.nama !== undefined) {
       fields.push(`nama_mapel = $${paramIndex++}`);
       values.push(req.nama);
     }
+    if (req.kode !== undefined) {
+      fields.push(`kode_mapel = $${paramIndex++}`);
+      values.push(req.kode);
+    }
     if (req.deskripsi !== undefined) {
       fields.push(`deskripsi = $${paramIndex++}`);
       values.push(req.deskripsi);
+    }
+    if (req.kode_kelas !== undefined) {
+      fields.push(`kode_kelas = $${paramIndex++}`);
+      values.push(req.kode_kelas);
     }
 
     if (fields.length === 0) {
@@ -98,13 +147,13 @@ export class MataPelajaranService {
     }
 
     fields.push(`updated_at = NOW()`);
-    values.push(kode);
+    values.push(id);
 
     try {
       const query = `
         UPDATE mata_pelajaran
         SET ${fields.join(', ')}
-        WHERE kode_mapel = $${paramIndex}
+        WHERE id = $${paramIndex}
         RETURNING *
       `;
 
@@ -120,19 +169,17 @@ export class MataPelajaranService {
     }
   }
 
-  // DELETE
-  async delete(kode: string): Promise<string> {
-    // Cek dulu apakah mata pelajaran ada
-    await this.findOne(kode);
+  async delete(id : number): Promise<string> {
+    await this.findOne(id);
 
     const query = `
       DELETE FROM mata_pelajaran
-      WHERE kode_mapel = $1
+      WHERE id = $1
     `;
 
-    await this.db.executeQuery(query, [kode]);
+    await this.db.executeQuery(query, [id]);
 
-    return `Mata pelajaran dengan kode ${kode} berhasil dihapus`;
+    return `Mata pelajaran dengan id ${id} berhasil dihapus`;
   }
 
   // SEARCH BY NAME
@@ -149,8 +196,10 @@ export class MataPelajaranService {
   // Helper method untuk mapping database row ke DTO
   private mapToDto(row: any): MataPelajaranDto {
     return {
+      id : row.id,
       kode: row.kode_mapel,
       nama: row.nama_mapel,
+      kode_kelas : row.kode_kelas,
       deskripsi: row.deskripsi,
       created_at: row.created_at,
       updated_at: row.updated_at,
